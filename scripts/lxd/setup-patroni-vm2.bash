@@ -60,11 +60,22 @@ tags:
     nosync: false
 EOF
 
+chown -R 101:103 /data/patroni /data/postgresql
+chmod -R 700 /data/postgresql
+chmod -R 755 /data/patroni
+
+
 docker rm -f patroni || true
 docker run -d \
   --name patroni \
   --network host \
   --restart unless-stopped \
+  -u postgres \
+  -e ETCD_DISABLE=true \
+  -e ETCDCTL_ENDPOINTS="http://10.0.0.219:2379,http://10.0.0.180:2379,http://10.0.0.55:2379" \
+  -e SCOPE="postgres" \
+  -e PGDATA="/data/postgresql" \
+  -e PATRONI_ETCD_HOSTS="10.0.0.219:2379,10.0.0.180:2379,10.0.0.55:2379" \
   -v /data/patroni:/etc/patroni:ro \
   -v /data/postgresql:/data/postgresql \
-  swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/zalando/spilo-16:3.3-p1
+  ghcr.io/zalando/spilo-16:3.3-p1 patroni /etc/patroni/patroni.yml

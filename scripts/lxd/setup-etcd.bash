@@ -31,4 +31,5 @@ docker run -d \
   -e ETCD_INITIAL_CLUSTER=${INITIAL_CLUSTER} \
   -e ETCD_INITIAL_CLUSTER_TOKEN="postgres-ha-cluster" \
   -e ETCD_INITIAL_CLUSTER_STATE="new" \
+  -e ETCD_ENABLE_V2="true" \
   quay.io/coreos/etcd:v3.5.12
