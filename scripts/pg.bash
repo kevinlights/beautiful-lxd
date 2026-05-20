@@ -60,9 +60,81 @@ lxc exec vm1 -- docker exec -it patroni patronictl -c /etc/patroni/patroni.yml l
 # +-------------+------------+---------+-----------+----+-----------+
 
 
-# docker exec -it patroni patronictl list postgres
-# docker exec -it patroni patronictl show-config
+# docker exec -it patroni patronictl -c /etc/patroni/patroni.yml list
+# docker exec -it patroni patronictl -c /etc/patroni/patroni.yml show-config postgres
+# loop_wait: 10
+# maximum_lag_on_failover: 1048576
+# postgresql:
+#   parameters:
+#     listen_addresses: 0.0.0.0
+#     max_connections: 100
+#   use_pg_rewind: true
+# retry_timeout: 10
+# ttl: 30
 # # manually switchover to test HAProxy health check
-# docker exec -it patroni patronictl switchover postgres
+# docker exec -it patroni patronictl -c /etc/patroni/patroni.yml switchover postgres
+
+# Current cluster topology
+# + Cluster: postgres (7641951170765574165) -------+----+-----------+
+# | Member      | Host       | Role    | State     | TL | Lag in MB |
+# +-------------+------------+---------+-----------+----+-----------+
+# | postgresql1 | 10.0.0.219 | Leader  | running   |  2 |           |
+# | postgresql2 | 10.0.0.180 | Replica | running   |  1 |        28 |
+# | postgresql3 | 10.0.0.55  | Replica | streaming |  2 |         0 |
+# +-------------+------------+---------+-----------+----+-----------+
+# Primary [postgresql1]: 
+# Candidate ['postgresql2', 'postgresql3'] []: postgresql2
+# When should the switchover take place (e.g. 2026-05-20T14:16 )  [now]: 
+# Are you sure you want to switchover cluster postgres, demoting current leader postgresql1? [y/N]: y
+# Switchover failed, details: 503, Switchover failed
+
+# docker exec -it patroni patronictl -c /etc/patroni/patroni.yml switchover postgres
+# Current cluster topology
+# + Cluster: postgres (7641951170765574165) -------+----+-----------+
+# | Member      | Host       | Role    | State     | TL | Lag in MB |
+# +-------------+------------+---------+-----------+----+-----------+
+# | postgresql1 | 10.0.0.219 | Leader  | running   |  2 |           |
+# | postgresql2 | 10.0.0.180 | Replica | running   |  1 |        28 |
+# | postgresql3 | 10.0.0.55  | Replica | streaming |  2 |         0 |
+# +-------------+------------+---------+-----------+----+-----------+
+# Primary [postgresql1]: 
+# Candidate ['postgresql2', 'postgresql3'] []: postgresql3
+# When should the switchover take place (e.g. 2026-05-20T14:18 )  [now]: 
+# Are you sure you want to switchover cluster postgres, demoting current leader postgresql1? [y/N]: y
+# 2026-05-20 13:18:22.71621 Successfully switched over to "postgresql3"
+# + Cluster: postgres (7641951170765574165) -----+----+-----------+
+# | Member      | Host       | Role    | State   | TL | Lag in MB |
+# +-------------+------------+---------+---------+----+-----------+
+# | postgresql1 | 10.0.0.219 | Replica | stopped |    |   unknown |
+# | postgresql2 | 10.0.0.180 | Replica | running |  1 |        28 |
+# | postgresql3 | 10.0.0.55  | Leader  | running |  2 |           |
+# +-------------+------------+---------+---------+----+-----------+
+
 # docker exec -it patroni bash
-# docker exec -it patroni tail -f /data/postgresql/log/postgresql.log
+
+# run in leader node
+# docker exec -it patroni psql -U postgres -c "SELECT usename, application_name, state, sync_state, replay_lag, flush_lag FROM pg_stat_replication;"
+
+# docker exec -it patroni patronictl version
+
+lxc exec vm2 -- docker logs patroni
+lxc exec vm2 -- bash
+# rm -rf /data/postgresql
+# rm -rf /data/postgresql.failed
+
+# root@vm1:~# docker exec -it patroni patronictl -c /etc/patroni/patroni.yml list
+# + Cluster: postgres (7641951170765574165) -------+----+-----------+
+# | Member      | Host       | Role    | State     | TL | Lag in MB |
+# +-------------+------------+---------+-----------+----+-----------+
+# | postgresql1 | 10.0.0.219 | Leader  | running   |  4 |           |
+# | postgresql2 | 10.0.0.180 | Replica | streaming |  4 |         0 |
+# | postgresql3 | 10.0.0.55  | Replica | streaming |  4 |         0 |
+# +-------------+------------+---------+-----------+----+-----------+
+
+# docker exec patroni psql -U postgres -c "SELECT pg_current_wal_lsn();"
+# docker exec patroni ls -la /data/postgresql/pg_wal/ | tail -20
+
+# docker exec patroni psql -U postgres -c "SELECT * FROM pg_stat_replication;"
+# docker exec patroni psql -U postgres -c "SELECT * FROM pg_stat_wal_receiver;"
+# docker exec patroni psql -U postgres -c "SELECT * FROM pg_stat_database;"
+

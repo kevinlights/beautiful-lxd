@@ -60,6 +60,7 @@ tags:
     nosync: false
 EOF
 
+mkdir -p /data/postgresql
 chown -R 101:103 /data/patroni /data/postgresql
 chmod -R 700 /data/postgresql
 chmod -R 755 /data/patroni

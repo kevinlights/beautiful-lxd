@@ -98,6 +98,7 @@ tags:
     nosync: false
 EOF
 
+mkdir -p /data/postgresql
 # docker run --rm ghcr.io/zalando/spilo-16:3.3-p1 id postgres
 # uid=101(postgres) gid=103(postgres) groups=103(postgres),0(root),102(ssl-cert)
 chown -R 101:103 /data/patroni /data/postgresql
