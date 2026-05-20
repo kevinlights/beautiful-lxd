@@ -19,15 +19,25 @@ listen stats
     bind *:7000
     stats enable
     stats uri /
+    stats refresh 5s
 
-listen postgres
+listen primary
     bind *:5000
-    option httpchk
+    option httpchk OPTIONS /master
     http-check expect status 200
     default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
-    server postgres1 10.0.0.219:5432 maxconn 100 check port 8008
-    server postgres2 10.0.0.180:5432 maxconn 100 check port 8008
-    server postgres3 10.0.0.55:5432 maxconn 100 check port 8008
+    server pg1 10.0.0.219:5432 maxconn 100 check port 8008
+    server pg2 10.0.0.180:5432 maxconn 100 check port 8008
+    server pg3 10.0.0.55:5432 maxconn 100 check port 8008
+
+listen replica
+    bind *:5001
+    option httpchk OPTIONS /replica
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+    server pg1 10.0.0.219:5432 maxconn 100 check port 8008
+    server pg2 10.0.0.180:5432 maxconn 100 check port 8008
+    server pg3 10.0.0.55:5432 maxconn 100 check port 8008
 EOF
 
 docker rm -f haproxy || true

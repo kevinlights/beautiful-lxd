@@ -138,3 +138,18 @@ lxc exec vm2 -- bash
 # docker exec patroni psql -U postgres -c "SELECT * FROM pg_stat_wal_receiver;"
 # docker exec patroni psql -U postgres -c "SELECT * FROM pg_stat_database;"
 
+
+sudo lxc config device add vm1 haproxy-proxy proxy \
+  listen=tcp:0.0.0.0:7000 \
+  connect=tcp:10.0.0.219:7000
+
+# sudo lxc config device add vm1 postgres-primary-proxy proxy \
+#   listen=tcp:0.0.0.0:5000 \
+#   connect=tcp:10.0.0.219:5000
+
+# sudo lxc config device add vm1 postgres-replica-proxy proxy \
+#   listen=tcp:0.0.0.0:5001 \
+#   connect=tcp:10.0.0.219:5001
+
+lxc config device list vm1
+# haproxy-proxy
