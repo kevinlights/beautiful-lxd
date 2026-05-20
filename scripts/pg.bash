@@ -153,3 +153,13 @@ sudo lxc config device add vm1 haproxy-proxy proxy \
 
 lxc config device list vm1
 # haproxy-proxy
+
+lxc config device show vm1
+# haproxy-proxy:
+#   connect: tcp:10.0.0.219:7000
+#   listen: tcp:0.0.0.0:7000
+#   type: proxy
+
+# lxc config device remove vm1 haproxy-proxy
+
+
