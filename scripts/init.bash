@@ -81,3 +81,17 @@ lxc start vm3
 lxc exec vm1 -- docker run --rm hello-world
 lxc exec vm2 -- docker run --rm hello-world
 lxc exec vm3 -- docker run --rm hello-world
+
+# check network in docker container
+lxc exec vm1 -- docker run --rm busybox ping -c 3 8.8.8.8
+lxc exec vm2 -- docker run --rm busybox ping -c 3 8.8.8.8
+lxc exec vm3 -- docker run --rm busybox ping -c 3 8.8.8.8
+
+lxc exec vm1 -- docker run --rm busybox ping -c 3 10.0.0.180
+lxc exec vm2 -- docker run --rm busybox ping -c 3 10.0.0.55
+lxc exec vm3 -- docker run --rm busybox ping -c 3 10.0.0.219
+
+lxc exec vm1 -- ip route
+lxc exec vm1 -- docker run --rm busybox ip route
+
+
