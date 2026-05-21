@@ -387,3 +387,148 @@ done | sort | uniq -c
     #   3  10.0.0.55
 
 # curl http://192.168.64.3:7000
+
+
+# index research
+
+# 创建包含多种数据类型的测试表
+docker exec patroni psql -U postgres -c "
+DROP TABLE IF EXISTS perf_test CASCADE;
+CREATE TABLE perf_test (
+    id SERIAL PRIMARY KEY,
+    number_val INT,
+    text_val TEXT,
+    jsonb_val JSONB,
+    tags TEXT[],
+    created_at TIMESTAMP DEFAULT NOW()
+);
+-- 插入 100 万条测试数据
+INSERT INTO perf_test (number_val, text_val, jsonb_val, tags)
+SELECT 
+    floor(random() * 1000000)::int,
+    md5(random()::text),
+    jsonb_build_object('key', floor(random() * 1000)::int, 'value', md5(random()::text)),
+    ARRAY[md5(random()::text), md5(random()::text), md5(random()::text)]
+FROM generate_series(1, 1000000);
+"
+
+# DROP TABLE
+# CREATE TABLE
+# INSERT 0 1000000
+
+
+# 1. 查看无索引时的查询计划
+docker exec patroni psql -U postgres -c "
+EXPLAIN (ANALYZE, BUFFERS, TIMING)
+SELECT * FROM perf_test WHERE number_val = 500000;
+"
+#                                                          QUERY PLAN                                                          
+# -----------------------------------------------------------------------------------------------------------------------------
+#  Gather  (cost=1000.00..48539.61 rows=10357 width=112) (actual time=31.115..64.580 rows=1 loops=1)
+#    Workers Planned: 2
+#    Workers Launched: 2
+#    Buffers: shared hit=15025 read=20690 dirtied=23984 written=20594
+#    ->  Parallel Seq Scan on perf_test  (cost=0.00..46503.91 rows=4315 width=112) (actual time=49.940..60.325 rows=0 loops=3)
+#          Filter: (number_val = 500000)
+#          Rows Removed by Filter: 333333
+#          Buffers: shared hit=15025 read=20690 dirtied=23984 written=20594
+#  Planning:
+#    Buffers: shared hit=57 read=21 dirtied=2
+#  Planning Time: 1.173 ms
+#  Execution Time: 64.602 ms
+# (12 rows)
+
+# 2. 创建 B-Tree 索引
+docker exec patroni psql -U postgres -c "CREATE INDEX CONCURRENTLY idx_btree_number ON perf_test (number_val);"
+# CREATE INDEX
+
+# 3. 再次查看查询计划（应该使用 Index Scan）
+docker exec patroni psql -U postgres -c "
+EXPLAIN (ANALYZE, BUFFERS, TIMING)
+SELECT * FROM perf_test WHERE number_val = 500000;
+"
+#                                                           QUERY PLAN                                                           
+# -------------------------------------------------------------------------------------------------------------------------------
+#  Index Scan using idx_btree_number on perf_test  (cost=0.42..12.46 rows=2 width=249) (actual time=0.020..0.021 rows=1 loops=1)
+#    Index Cond: (number_val = 500000)
+#    Buffers: shared hit=3 read=1
+#  Planning:
+#    Buffers: shared hit=117 read=1
+#  Planning Time: 0.381 ms
+#  Executio
+
+# 4. 查看索引大小对比
+docker exec patroni psql -U postgres -c "
+SELECT 
+    relname,
+    pg_size_pretty(pg_relation_size(relname::regclass)) as index_size
+FROM pg_class 
+WHERE relname LIKE 'idx_%' OR relname = 'perf_test';
+"
+#      relname      | index_size 
+# ------------------+------------
+#  idx_btree_number | 19 MB
+#  perf_test        | 279 MB
+# (2 rows)
+
+# 1. 测试 Hash 索引（仅支持等值查询）
+docker exec patroni psql -U postgres -c "
+-- 删除旧索引，创建 Hash 索引
+DROP INDEX IF EXISTS idx_hash_text;
+CREATE INDEX idx_hash_text ON perf_test USING hash (text_val);
+ANALYZE perf_test;
+
+-- 等值查询测试
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM perf_test WHERE text_val = (SELECT text_val FROM perf_test LIMIT 1);
+"
+
+# NOTICE:  index "idx_hash_text" does not exist, skipping
+# DROP INDEX
+# CREATE INDEX
+# ANALYZE
+#                                                               QUERY PLAN                                                               
+# ---------------------------------------------------------------------------------------------------------------------------------------
+#  Index Scan using idx_hash_text on perf_test  (cost=0.05..8.06 rows=1 width=249) (actual time=0.082..0.083 rows=1 loops=1)
+#    Index Cond: (text_val = $0)
+#    Buffers: shared hit=3 read=1
+#    InitPlan 1 (returns $0)
+#      ->  Limit  (cost=0.00..0.05 rows=1 width=33) (actual time=0.074..0.074 rows=1 loops=1)
+#            Buffers: shared read=1
+#            ->  Seq Scan on perf_test perf_test_1  (cost=0.00..45714.96 rows=999996 width=33) (actual time=0.073..0.073 rows=1 loops=1)
+#                  Buffers: shared read=1
+#  Planning:
+#    Buffers: shared hit=45
+#  Planning Time: 0.096 ms
+#  Execution Time: 0.095 ms
+# (12 rows)
+
+# 2. 对比 B-Tree 索引的等值查询
+docker exec patroni psql -U postgres -c "
+DROP INDEX IF EXISTS idx_btree_text;
+CREATE INDEX idx_btree_text ON perf_test (text_val);
+ANALYZE perf_test;
+
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM perf_test WHERE text_val = (SELECT text_val FROM perf_test LIMIT 1);
+"
+# NOTICE:  index "idx_btree_text" does not exist, skipping
+# DROP INDEX
+# CREATE INDEX
+# ANALYZE
+#                                                               QUERY PLAN                                                               
+# ---------------------------------------------------------------------------------------------------------------------------------------
+#  Index Scan using idx_hash_text on perf_test  (cost=0.05..8.06 rows=1 width=249) (actual time=0.011..0.011 rows=1 loops=1)
+#    Index Cond: (text_val = $0)
+#    Buffers: shared hit=4
+#    InitPlan 1 (returns $0)
+#      ->  Limit  (cost=0.00..0.05 rows=1 width=33) (actual time=0.004..0.004 rows=1 loops=1)
+#            Buffers: shared hit=1
+#            ->  Seq Scan on perf_test perf_test_1  (cost=0.00..45714.96 rows=999996 width=33) (actual time=0.003..0.003 rows=1 loops=1)
+#                  Buffers: shared hit=1
+#  Planning:
+#    Buffers: shared hit=40 read=1
+#  Planning Time: 0.111 ms
+#  Execution Time: 0.023 ms
+# (12 rows)
+
